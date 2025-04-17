@@ -1,6 +1,6 @@
 from sbi.neural_nets.embedding_nets.SC_embedding import SpectralConvEmbedding
 from sbi.neural_nets.embedding_nets.causal_cnn import CausalCNNEmbedding
-from sbi.neural_nets.embedding_nets.cnn import CNNEmbedding
+from sbi.neural_nets.embedding_nets.cnn import CNNEmbedding, hpCNNEmbedding
 from sbi.neural_nets.embedding_nets.fully_connected import FCEmbedding
 from sbi.neural_nets.embedding_nets.lru import LRUEmbedding
 from sbi.neural_nets.embedding_nets.permutation_invariant import (
@@ -15,6 +15,7 @@ from sbi.neural_nets.embedding_nets.transformer import TransformerEmbedding
 __all__ = [
     "CausalCNNEmbedding",
     "CNNEmbedding",
+    "hpCNNEmbedding"
     "FCEmbedding",
     "LRUEmbedding",
     "PermutationInvariantEmbedding",

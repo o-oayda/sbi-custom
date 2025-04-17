@@ -8,6 +8,8 @@ from torch import Tensor, nn
 
 from sbi.neural_nets.embedding_nets.fully_connected import FCEmbedding
 
+from sbi.neural_nets.embedding_nets import spherical as sp
+from healpy import nside2npix
 
 def calculate_filter_output_size(input_size, padding, dilation, kernel, stride) -> int:
     """Returns output size of a filter given filter arguments.
@@ -65,6 +67,73 @@ def get_new_cnn_output_size(
     ]
     return tuple(out_after_pool)  # pyright: ignore[reportReturnType]
 
+class hpCNNEmbedding(nn.Module):
+    '''
+    CNN emedding network for use on the healpix sphere.
+    '''
+    def __init__(self,
+        nside: int,
+        in_channels: int = 1,
+        out_channels: int = 1,
+        nest: bool = True,
+        n_blocks: None | int = None,
+        num_fc_units: int = 48,
+        num_fc_layers: int = 2,
+        output_dim: int = 20
+    ) -> None:
+        '''
+        :param input_size: Nside of input healpy map.
+        :param in_channels: Number of input channels.
+        :param out_channels: ?.
+        :param n_blocks: Number of network building blocks to use, as defined
+            in Krachmalnicoff & Tomasi (2019). A minimum of 1 block needs to be
+            specified, up to a maximum of log2(nside), representing a maximally
+            deep network (default).
+        :param nest: Whether or not the healpy map uses nested ordering.
+            This always needs to be true it seems (required for pooling).
+        '''
+        super().__init__()
+
+        if n_blocks == None:
+            self.n_blocks = torch.log2(torch.as_tensor(nside))
+
+        npix = nside2npix(nside)
+        self.input_shape = (in_channels, npix) # input map is always 1d?
+        cur_nside = nside
+        cnn_layers = []
+
+        for _ in range(self.n_blocks.to(dtype=torch.int)):
+            conv_layer = sp.sphericalConv(
+                NSIDE=cur_nside, in_channels=in_channels,
+                out_channels=out_channels, nest=nest
+            )
+            pool = sp.sphericalDown(cur_nside)
+            cnn_layers += [conv_layer, nn.ReLU(inplace=True), pool]
+            cur_nside //= 2
+            cnn_output_size = nside2npix(cur_nside)
+        
+        self.cnn_subnet = nn.Sequential(*cnn_layers)
+
+        # Construct linear post processing net
+        self.linear_subnet = FCEmbedding(
+            input_dim=out_channels * cnn_output_size,
+            output_dim=output_dim,
+            num_layers=num_fc_layers,
+            num_hiddens=num_fc_units,
+        )
+    
+    def forward(self, x: Tensor) -> Tensor:
+        batch_size = x.size(0)
+        # print(x.shape)
+        # print(x.view(batch_size, *self.input_shape).shape)
+        # reshape to account for single channel data
+        x = self.cnn_subnet(x.view(batch_size, *self.input_shape))
+
+        # flatten for linear layers
+        x = x.view(batch_size, -1)
+        x = self.linear_subnet(x)
+        
+        return x
 
 class CNNEmbedding(nn.Module):
     """Convolutional embedding network (1D or 2D convolutions)."""
