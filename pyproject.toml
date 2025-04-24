@@ -46,8 +46,8 @@ dependencies = [
     "zuko>=1.2.0",
     "pyyaml>=6.0.2",
     "pyerfa",
-    "astropy>=7.0.1",
-    "healpy>=1.18.1"
+    "astropy",
+    "healpy"
 ]
 
 [project.optional-dependencies]
