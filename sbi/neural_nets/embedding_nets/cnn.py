@@ -74,7 +74,7 @@ class hpCNNEmbedding(nn.Module):
     def __init__(self,
         nside: int,
         in_channels: int = 1,
-        out_channels: int = 1,
+        out_channels_per_layer: Optional[List[int]] = None,
         nest: bool = True,
         n_blocks: None | int = None,
         num_fc_units: int = 48,
@@ -82,9 +82,10 @@ class hpCNNEmbedding(nn.Module):
         output_dim: int = 20
     ) -> None:
         '''
-        :param input_size: Nside of input healpy map.
+        :param nside: Nside of input healpy map.
         :param in_channels: Number of input channels.
-        :param out_channels: ?.
+        :param out_channels_per_layer: Number of output channels for each layer.
+            If None, defaults to [8, 16, 32, 64, 128, 256].
         :param n_blocks: Number of network building blocks to use, as defined
             in Krachmalnicoff & Tomasi (2019). A minimum of 1 block needs to be
             specified, up to a maximum of log2(nside), representing a maximally
@@ -97,26 +98,47 @@ class hpCNNEmbedding(nn.Module):
         if n_blocks == None:
             self.n_blocks = torch.log2(torch.as_tensor(nside))
 
+        if out_channels_per_layer is None:
+            out_channels_per_layer = [8, 16, 32, 64, 128, 256]
+        
+        # Ensure we don't have more layers than blocks
+        max_blocks = int(self.n_blocks)
+        out_channels_per_layer = out_channels_per_layer[:max_blocks]
+
         npix = nside2npix(nside)
         self.input_shape = (in_channels, npix) # input map is always 1d?
         cur_nside = nside
         cnn_layers = []
+        current_in_channels = in_channels
+        current_out_channels = current_in_channels # for no blocks/linter
 
-        for _ in range(self.n_blocks.to(dtype=torch.int)):
+        for i in range(self.n_blocks.to(dtype=torch.int)):
+            # Get output channels for this layer
+            # (or use last value if list is shorter)
+            if i < len(out_channels_per_layer):
+                current_out_channels = out_channels_per_layer[i]
+            else:
+                current_out_channels = out_channels_per_layer[-1]
+                
             conv_layer = sp.sphericalConv(
-                NSIDE=cur_nside, in_channels=in_channels,
-                out_channels=out_channels, nest=nest
+                NSIDE=cur_nside,
+                in_channels=current_in_channels,
+                out_channels=current_out_channels,
+                nest=nest
             )
             pool = sp.sphericalDown(cur_nside)
             cnn_layers += [conv_layer, nn.ReLU(inplace=True), pool]
             cur_nside //= 2
-            cnn_output_size = nside2npix(cur_nside)
+            cnn_output_size = int(nside2npix(cur_nside))
+            
+            # Update input channels for next layer
+            current_in_channels = current_out_channels
         
         self.cnn_subnet = nn.Sequential(*cnn_layers)
 
         # Construct linear post processing net
         self.linear_subnet = FCEmbedding(
-            input_dim=out_channels * cnn_output_size,
+            input_dim=current_out_channels * cnn_output_size,
             output_dim=output_dim,
             num_layers=num_fc_layers,
             num_hiddens=num_fc_units,
