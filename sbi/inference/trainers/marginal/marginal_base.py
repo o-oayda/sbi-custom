@@ -27,6 +27,12 @@ DensityEstimatorType = Union[ZukoFlowType, str, Callable[[Tensor], Any]]
 
 
 class MarginalTrainer:
+    """Utility class for training a marginal density estimator.
+
+    The Marginal density estimator can, in principle, be used for many things. In
+    the ``sbi`` toolbox, we usually use it only to detect misspecification (see the
+    how-to guide on the documentation website)."""
+
     def __init__(
         self,
         density_estimator: DensityEstimatorType = ZukoFlowType.NSF,
@@ -34,7 +40,7 @@ class MarginalTrainer:
         summary_writer: Optional[SummaryWriter] = None,
         show_progress_bars: bool = True,
     ):
-        """Utility class for training a marginal estimator method.
+        """Initialize the marginal trainer.
 
         Args:
             density_estimator: Density estimator to use. Can be a string or a callable.
@@ -318,14 +324,6 @@ class MarginalTrainer:
 
         return converged
 
-    @staticmethod
-    def _maybe_show_progress(show: bool, epoch: int) -> None:
-        if show:
-            # end="\r" deletes the print statement when a new one appears.
-            # https://stackoverflow.com/questions/3419984/. `\r` in the beginning due
-            # to #330.
-            print("\r", f"Training neural network. Epochs trained: {epoch}", end="")
-
     def _summarize(
         self,
         round_: int,
@@ -395,3 +393,11 @@ class MarginalTrainer:
             )
 
         self._summary_writer.flush()
+
+    @staticmethod
+    def _maybe_show_progress(show: bool, epoch: int) -> None:
+        if show:
+            # end="\r" deletes the print statement when a new one appears.
+            # https://stackoverflow.com/questions/3419984/. `\r` in the beginning due
+            # to #330.
+            print("\r", f"Training neural network. Epochs trained: {epoch}", end="")
