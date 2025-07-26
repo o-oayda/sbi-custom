@@ -79,7 +79,8 @@ class hpCNNEmbedding(nn.Module):
         n_blocks: None | int = None,
         num_fc_units: int = 48,
         num_fc_layers: int = 2,
-        output_dim: int = 20
+        output_dim: int = 20,
+        dropout_rate: Optional[float] = None
     ) -> None:
         '''
         :param nside: Nside of input healpy map.
@@ -92,11 +93,15 @@ class hpCNNEmbedding(nn.Module):
             deep network (default).
         :param nest: Whether or not the healpy map uses nested ordering.
             This always needs to be true it seems (required for pooling).
+        :param dropout_rate: Dropout rate to apply after CNN layers, before FC layers.
+            If None, no dropout is applied.
         '''
         super().__init__()
 
         if n_blocks == None:
             self.n_blocks = torch.log2(torch.as_tensor(nside))
+        else:
+            self.n_blocks = n_blocks
 
         if out_channels_per_layer is None:
             out_channels_per_layer = [8, 16, 32, 64, 128, 256]
@@ -105,6 +110,13 @@ class hpCNNEmbedding(nn.Module):
         max_blocks = int(self.n_blocks)
         out_channels_per_layer = out_channels_per_layer[:max_blocks]
 
+        # repeat last element of out_channels_per_layer
+        if len(out_channels_per_layer) < max_blocks:
+            out_channels_per_layer += (
+                  [out_channels_per_layer[-1]]
+                * (max_blocks - len(out_channels_per_layer))
+            )
+
         npix = nside2npix(nside)
         self.input_shape = (in_channels, npix) # input map is always 1d?
         cur_nside = nside
@@ -112,13 +124,20 @@ class hpCNNEmbedding(nn.Module):
         current_in_channels = in_channels
         current_out_channels = current_in_channels # for no blocks/linter
 
-        for i in range(self.n_blocks.to(dtype=torch.int)):
-            # Get output channels for this layer
-            # (or use last value if list is shorter)
-            if i < len(out_channels_per_layer):
-                current_out_channels = out_channels_per_layer[i]
-            else:
-                current_out_channels = out_channels_per_layer[-1]
+        print(f"hpCNNEmbedding configuration:")
+        print(f"  Input nside: {nside}")
+        print(f"  Output nside {int( nside / (2**self.n_blocks)) }")
+        print(f"  in_channels: {in_channels}")
+        print(f"  out_channels_per_layer: {out_channels_per_layer}")
+        print(f"  n_blocks: {self.n_blocks}")
+        print(f"  dropout_rate: {dropout_rate}")
+        print(f"  nest: {nest}")
+        print(f"  num_fc_units: {num_fc_units}")
+        print(f"  num_fc_layers: {num_fc_layers}")
+        print(f"  output_dim: {output_dim}")
+
+        for i in range(int(self.n_blocks)):
+            current_out_channels = out_channels_per_layer[i]
                 
             conv_layer = sp.sphericalConv(
                 NSIDE=cur_nside,
@@ -136,6 +155,9 @@ class hpCNNEmbedding(nn.Module):
         
         self.cnn_subnet = nn.Sequential(*cnn_layers)
 
+        # Add dropout layer if specified
+        self.dropout = nn.Dropout(dropout_rate) if dropout_rate is not None else None
+
         # Construct linear post processing net
         self.linear_subnet = FCEmbedding(
             input_dim=current_out_channels * cnn_output_size,
@@ -146,13 +168,17 @@ class hpCNNEmbedding(nn.Module):
     
     def forward(self, x: Tensor) -> Tensor:
         batch_size = x.size(0)
-        # print(x.shape)
-        # print(x.view(batch_size, *self.input_shape).shape)
+
         # reshape to account for single channel data
         x = self.cnn_subnet(x.view(batch_size, *self.input_shape))
 
         # flatten for linear layers
         x = x.view(batch_size, -1)
+        
+        # Apply dropout if specified
+        if self.dropout is not None:
+            x = self.dropout(x)
+        
         x = self.linear_subnet(x)
         
         return x
