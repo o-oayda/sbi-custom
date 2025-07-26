@@ -113,6 +113,17 @@ class CustomPriorWrapper(Distribution):
                 stacklevel=2,
             )
 
+    def _move_support_to_device(self, device: Union[str, torch.device]) -> None:
+        '''
+        If the support ranges were put on a different device originally,
+        then they will remain on that device. We need to access the support
+        explicitly and transfer to the right device, otherwise there will be a
+        device mismatch error when the parameter transform is called.
+        '''
+        base_constraint = self.support.base_constraint
+        base_constraint.lower_bound = base_constraint.lower_bound.to(device)
+        base_constraint.upper_bound = base_constraint.upper_bound.to(device)
+
     def to(self, device: Union[str, torch.device]) -> None:
         """
         Move the distribution to the specified device. Calls custom prior's to
@@ -122,6 +133,7 @@ class CustomPriorWrapper(Distribution):
             "custom_prior must implement a 'to' method."
         )
         self.custom_prior.to(device)
+        self._move_support_to_device(device)
         self.device = device
 
     @property
