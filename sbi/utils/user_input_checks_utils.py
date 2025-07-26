@@ -115,15 +115,14 @@ class CustomPriorWrapper(Distribution):
 
     def to(self, device: Union[str, torch.device]) -> None:
         """
-        Move the distribution to the specified device. Not implemented for this class.
-
-        Raises:
-            NotImplementedError.
+        Move the distribution to the specified device. Calls custom prior's to
+        method, requiring the user to define it.
         """
-        raise NotImplementedError(
-            "This class is not supported on the GPU. Use on cpu or use "
-            "any of `PytorchReturnTypeWrapper`, `BoxUniform`, or `MultipleIndependent`."
+        assert hasattr(self.custom_prior, "to"), (
+            "custom_prior must implement a 'to' method."
         )
+        self.custom_prior.to(device)
+        self.device = device
 
     @property
     def mean(self):
